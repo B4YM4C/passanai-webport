@@ -802,6 +802,15 @@ export default function CMSEditor() {
     }
 
     function boot() {
+      // ---- Auth gate --------------------------------------------------
+      // Only mount the CMS if the `cms-ok` cookie is present. The cookie
+      // is set by /middleware.js after the visitor passes HTTP Basic Auth
+      // (credentials stored on Vercel as CMS_USER / CMS_PASS env vars).
+      // Random visitors never see the toolbar or the Ctrl+Shift+E shortcut.
+      const authed = (typeof document !== 'undefined') &&
+        /(?:^|;\s*)cms-ok=1(?:;|$)/.test(document.cookie);
+      if (!authed) return;
+
       registerAll();
       applyAll();
       wireToolbar();

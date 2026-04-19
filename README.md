@@ -61,6 +61,43 @@ vercel           # first run links the project
 vercel --prod    # production deploy
 ```
 
+## CMS access control (important)
+
+The CMS editor is hidden from everyone by default. It only mounts when the
+browser has a valid `cms-ok` cookie, which is set by `middleware.js` after
+the visitor passes HTTP Basic Auth.
+
+### Set your credentials on Vercel (one-time)
+
+1. Open the project on Vercel → **Settings** → **Environment Variables**.
+2. Add two variables (enable for **Production**, **Preview**, **Development**):
+   - `CMS_USER` — any username you like, e.g. `admin`
+   - `CMS_PASS` — a long random password (generate one via
+     [1password.com/password-generator](https://1password.com/password-generator))
+3. Click **Save**, then **Redeploy** the latest deployment so the new env
+   vars take effect.
+
+### Enter the CMS
+
+Visit `https://<your-site>.vercel.app/?edit=1`. Your browser will show a
+native username/password prompt — enter the `CMS_USER` / `CMS_PASS` you
+set above. Auth is remembered for 8 hours via a cookie.
+
+Random visitors who type `?edit=1` without the password see a 401 page and
+never get the CMS UI.
+
+### Local development
+
+Create a `.env.local` file (already in `.gitignore`):
+
+```
+CMS_USER=admin
+CMS_PASS=letmein
+```
+
+Restart `npm run dev`. Visit `http://localhost:3000/?edit=1` — same Basic
+Auth popup, local creds.
+
 ## Notes on behaviour
 
 - All CMS edits persist to `localStorage` under the key `cms-portfolio-v1`.
