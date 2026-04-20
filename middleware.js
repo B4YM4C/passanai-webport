@@ -23,10 +23,24 @@ export function middleware(req) {
   const wantsEdit = url.searchParams.has('edit');
   if (!wantsEdit) return NextResponse.next();
 
-  const user = process.env.CMS_USER || '';
-  const pass = process.env.CMS_PASS || '';
+  const isDev = process.env.NODE_ENV !== 'production';
 
-  // If env vars aren't configured, refuse the request loudly so you notice.
+  // Resolve credentials in this order:
+  //   1. Real env vars (production on Vercel + local .env.local)
+  //   2. Dev fallback (local `npm run dev` only) — user: dev / pass: dev
+  //
+  // The dev fallback NEVER applies on Vercel because Next automatically sets
+  // NODE_ENV=production there, so production is always locked down behind the
+  // real CMS_USER / CMS_PASS env vars.
+  let user = process.env.CMS_USER || '';
+  let pass = process.env.CMS_PASS || '';
+
+  if ((!user || !pass) && isDev) {
+    user = 'dev';
+    pass = 'dev';
+  }
+
+  // If env vars still aren't set (production with no config), refuse loudly.
   if (!user || !pass) {
     return new NextResponse(
       'CMS auth not configured. Set CMS_USER and CMS_PASS env vars on Vercel.',
@@ -40,11 +54,13 @@ export function middleware(req) {
   if (got === expected) {
     const res = NextResponse.next();
     // 8-hour session cookie. Not http-only so the client CMSEditor can read it.
+    // `secure: true` is required on Vercel (HTTPS) but breaks on http://localhost,
+    // so only enable it in production.
     res.cookies.set('cms-ok', '1', {
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 8,
-      secure: true,
+      secure: !isDev,
     });
     return res;
   }
