@@ -23,7 +23,14 @@ export default function CMSEditor() {
     // the DOM reflects the latest shared version.
     async function hydrateFromCloud() {
       try {
-        const res = await fetch(CLOUD_URL, { cache: 'no-store' });
+        // Cache-bust aggressively so mobile Safari / Chrome / any proxy
+        // between client and Vercel can't hand us a stale copy. The
+        // server sets no-store too, but belt-and-braces.
+        const bust = Date.now();
+        const res = await fetch(CLOUD_URL + '?t=' + bust, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-store' },
+        });
         if (!res.ok) return;
         const cloud = await res.json();
         if (!cloud || typeof cloud !== 'object') return;
@@ -35,6 +42,11 @@ export default function CMSEditor() {
         try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
         // Re-render the DOM from the fresh state.
         if (typeof applyAll === 'function') applyAll();
+        // Dev-only breadcrumb so you can see hydration happened.
+        try {
+          const n = Object.keys(state.elements || {}).length;
+          console.info('[cms] hydrated ' + n + ' edits from cloud');
+        } catch (e) {}
       } catch (e) {
         // Silent: if cloud is unreachable, we stay on localStorage.
         console.warn('[cms] cloud hydrate skipped:', e.message);
@@ -82,11 +94,11 @@ export default function CMSEditor() {
         }
         const msg = await res.text();
         if (res.status === 503) {
-          // Blob store not configured — explain clearly.
+          // KV not configured — explain clearly.
           status('Saved locally only (cloud not configured).', true);
           showBigBanner(
             'Saved locally only',
-            'Cloud store not set up yet — create a Blob in Vercel → Storage to sync across devices.',
+            'KV store not set up — Vercel → Storage → Create KV (Redis) → Connect to sync across devices.',
             true
           );
           return;
