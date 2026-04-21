@@ -922,6 +922,96 @@ export default function CMSEditor() {
       };
 
       $('#cmsExport').onclick = exportHtml;
+
+      // ---- Make the toolbar draggable -----------------------------------
+      // The `.cms-title` span acts as a grab handle. Dragging moves the
+      // whole toolbar, position persists in localStorage so it stays
+      // wherever you last left it across reloads. Works with both mouse
+      // and touch (iPad / trackpad).
+      setupToolbarDrag();
+    }
+
+    function setupToolbarDrag() {
+      const bar = $('#cmsToolbar');
+      const handle = bar && bar.querySelector('.cms-title');
+      if (!bar || !handle) return;
+
+      const POS_KEY = 'cms-toolbar-pos-v1';
+
+      // Restore saved position (clamped to viewport in case the window
+      // shrunk since last save).
+      try {
+        const raw = localStorage.getItem(POS_KEY);
+        if (raw) {
+          const { left, top } = JSON.parse(raw);
+          clampAndPlace(left, top);
+        }
+      } catch (e) { /* ignore */ }
+
+      function clampAndPlace(left, top) {
+        const rect = bar.getBoundingClientRect();
+        const w = rect.width || 360;
+        const h = rect.height || 48;
+        const pad = 6;
+        const maxLeft = Math.max(pad, window.innerWidth - w - pad);
+        const maxTop = Math.max(pad, window.innerHeight - h - pad);
+        const L = Math.min(Math.max(left, pad), maxLeft);
+        const T = Math.min(Math.max(top, pad), maxTop);
+        // Switch to left/top positioning (default CSS uses right:14px).
+        bar.style.left = L + 'px';
+        bar.style.top = T + 'px';
+        bar.style.right = 'auto';
+      }
+
+      let dragging = false;
+      let offX = 0;
+      let offY = 0;
+
+      function onDown(e) {
+        // Don't start drag from button clicks inside the toolbar.
+        if (e.target !== handle && !handle.contains(e.target)) return;
+        const point = e.touches ? e.touches[0] : e;
+        const rect = bar.getBoundingClientRect();
+        offX = point.clientX - rect.left;
+        offY = point.clientY - rect.top;
+        dragging = true;
+        bar.classList.add('cms-dragging');
+        e.preventDefault();
+      }
+
+      function onMove(e) {
+        if (!dragging) return;
+        const point = e.touches ? e.touches[0] : e;
+        clampAndPlace(point.clientX - offX, point.clientY - offY);
+      }
+
+      function onUp() {
+        if (!dragging) return;
+        dragging = false;
+        bar.classList.remove('cms-dragging');
+        // Persist the final location.
+        try {
+          const rect = bar.getBoundingClientRect();
+          localStorage.setItem(
+            POS_KEY,
+            JSON.stringify({ left: rect.left, top: rect.top })
+          );
+        } catch (e) { /* ignore */ }
+      }
+
+      // Replace (not add) so StrictMode double-mount can't stack handlers.
+      handle.onmousedown = onDown;
+      handle.ontouchstart = onDown;
+      window.onmousemove = (window.__cmsBarOnMove = onMove);
+      window.onmouseup = (window.__cmsBarOnUp = onUp);
+      window.ontouchmove = onMove;
+      window.ontouchend = onUp;
+
+      // Reclamp on resize so the toolbar can't end up off-screen.
+      window.addEventListener('resize', () => {
+        const rect = bar.getBoundingClientRect();
+        clampAndPlace(rect.left, rect.top);
+      });
     }
 
     function exportHtml() {

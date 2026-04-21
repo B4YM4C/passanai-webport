@@ -537,8 +537,19 @@
     box-shadow:0 14px 40px rgba(0,0,0,.35);
     padding:8px;font-family:'Inter',system-ui,sans-serif;font-size:12px;
     backdrop-filter:blur(10px);
+    /* Prevent drag gesture from selecting toolbar text. */
+    user-select:none;-webkit-user-select:none;
+    touch-action:none;
   }
-  .cms-toolbar .cms-title{font-weight:700;letter-spacing:.02em;padding:0 10px}
+  .cms-toolbar.cms-dragging{opacity:.92;cursor:grabbing!important;transition:none}
+  .cms-toolbar .cms-title{
+    font-weight:700;letter-spacing:.02em;padding:0 10px;
+    cursor:grab;user-select:none;
+  }
+  .cms-toolbar .cms-title:active{cursor:grabbing}
+  .cms-toolbar .cms-title::before{
+    content:"⠿";margin-right:6px;opacity:.55;font-size:14px;vertical-align:-1px;
+  }
   .cms-toolbar .cms-title b{color:var(--cms-accent-2)}
   .cms-toolbar button{
     background:var(--cms-bg-2);color:var(--cms-ink);border:1px solid var(--cms-line);
