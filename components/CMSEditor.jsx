@@ -5,32 +5,100 @@ import { useEffect } from 'react';
 export default function CMSEditor() {
   useEffect(() => {
     const LS_KEY = 'cms-portfolio-v1';
+    const CLOUD_URL = '/api/cms-state';
+    // `state` is mutated in place throughout this file, so we keep the
+    // const reference and only overwrite its keys.
     const state = load() || { elements: {}, addedNav: [], addedSections: [], deleted: [] };
 
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 
-    function save() {
+    // ---- Cloud hydration -----------------------------------------------
+    // Fetches the canonical shared state from /api/cms-state (Vercel Blob
+    // backed). Runs on EVERY visit — public or editor — so what you see
+    // on your Mac after Save is exactly what a stranger on iPhone sees.
+    //
+    // The first paint uses localStorage (fast, no flicker). When the
+    // cloud response lands, we overwrite state and call applyAll() so
+    // the DOM reflects the latest shared version.
+    async function hydrateFromCloud() {
+      try {
+        const res = await fetch(CLOUD_URL, { cache: 'no-store' });
+        if (!res.ok) return;
+        const cloud = await res.json();
+        if (!cloud || typeof cloud !== 'object') return;
+        state.elements = cloud.elements || {};
+        state.addedNav = cloud.addedNav || [];
+        state.addedSections = cloud.addedSections || [];
+        state.deleted = cloud.deleted || [];
+        // Keep a local offline copy in sync.
+        try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+        // Re-render the DOM from the fresh state.
+        if (typeof applyAll === 'function') applyAll();
+      } catch (e) {
+        // Silent: if cloud is unreachable, we stay on localStorage.
+        console.warn('[cms] cloud hydrate skipped:', e.message);
+      }
+    }
+
+    async function save() {
+      // Always persist locally first — this is the offline fallback and
+      // also protects work if the network hiccups mid-save.
       try {
         localStorage.setItem(LS_KEY, JSON.stringify(state));
-        const count = Object.keys(state.elements || {}).length;
-        const nav = (state.addedNav || []).length;
-        const sec = (state.addedSections || []).length;
-        const del = (state.deleted || []).length;
-        const msg =
-          '✓ Saved to this browser: ' +
-          count + ' text/style edits' +
-          (nav ? ', ' + nav + ' nav links' : '') +
-          (sec ? ', ' + sec + ' sections' : '') +
-          (del ? ', ' + del + ' deletes' : '');
-        status(msg);
-        showBigBanner(
-          'Saved ✓  (' + count + ' edits)',
-          'Your changes are now live on the main page (this browser). Open / in a new tab to confirm.'
-        );
       } catch (e) {
-        status('Save failed: ' + e.message, true);
+        status('Local save failed: ' + e.message, true);
         showBigBanner('Save FAILED', e.message, true);
+        return;
+      }
+
+      const count = Object.keys(state.elements || {}).length;
+      const nav = (state.addedNav || []).length;
+      const sec = (state.addedSections || []).length;
+      const del = (state.deleted || []).length;
+      const summary =
+        count + ' edits' +
+        (nav ? ', ' + nav + ' nav' : '') +
+        (sec ? ', ' + sec + ' sections' : '') +
+        (del ? ', ' + del + ' deletes' : '');
+
+      status('Saving to cloud…');
+
+      // Push to the shared Blob store. Middleware checks cms-ok cookie.
+      try {
+        const res = await fetch(CLOUD_URL, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state),
+        });
+        if (res.ok) {
+          status('✓ Saved globally (' + summary + ')');
+          showBigBanner(
+            'Saved globally ✓  (' + count + ' edits)',
+            'Live on / for every visitor now — refresh your iPhone or any other device to see it.'
+          );
+          return;
+        }
+        const msg = await res.text();
+        if (res.status === 503) {
+          // Blob store not configured — explain clearly.
+          status('Saved locally only (cloud not configured).', true);
+          showBigBanner(
+            'Saved locally only',
+            'Cloud store not set up yet — create a Blob in Vercel → Storage to sync across devices.',
+            true
+          );
+          return;
+        }
+        throw new Error(res.status + ' ' + msg);
+      } catch (e) {
+        status('Cloud save failed — kept locally: ' + e.message, true);
+        showBigBanner(
+          'Cloud save FAILED (kept locally)',
+          e.message + ' — edits are still on this browser. Retry Save when online.',
+          true
+        );
       }
     }
 
@@ -884,16 +952,17 @@ export default function CMSEditor() {
 
     function boot() {
       // ---- Step 1: replay saved edits for EVERY visit -----------------
-      // Running registerAll() + applyAll() here (before the edit-mode
-      // gate) means the public `/` view on the editor's own browser
-      // shows the latest saved edits automatically. No ?edit=1 needed
-      // to *see* changes — only to *make* changes.
-      //
-      // Note: edits live in this browser's localStorage, so other
-      // visitors won't see them until you Export → deploy. That's the
-      // intended boundary: drafts stay local, Export ships to the world.
+      // Run registerAll() + applyAll() synchronously using whatever
+      // localStorage has — this avoids any flash of the pristine JSX
+      // before the cloud state arrives.
       registerAll();
       applyAll();
+
+      // Then reach out to the shared Blob store for the canonical state.
+      // When it comes back (usually <300ms), state is overwritten and
+      // applyAll() runs again so the page shows the latest global
+      // version — the same one iPhone / desktop visitors will see.
+      hydrateFromCloud();
 
       // ---- Step 2: edit-mode gate -------------------------------------
       // The editor UI (toolbar, inspector, contentEditable) only mounts
