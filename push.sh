@@ -34,7 +34,10 @@ MSG="${1:-update: $(date '+%Y-%m-%d %H:%M')}"
 git commit -m "$MSG"
 
 echo "→ Pushing to GitHub..."
-git push
+# Use -u so the first push sets the upstream automatically; later pushes
+# are no-ops for the -u flag.
+BRANCH=$(git branch --show-current)
+git push -u origin "$BRANCH"
 
 echo ""
 echo "✅ Done. Vercel should auto-deploy in ~1-2 minutes."

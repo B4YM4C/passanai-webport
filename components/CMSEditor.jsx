@@ -13,10 +13,65 @@ export default function CMSEditor() {
     function save() {
       try {
         localStorage.setItem(LS_KEY, JSON.stringify(state));
-        status('Saved');
+        const count = Object.keys(state.elements || {}).length;
+        const nav = (state.addedNav || []).length;
+        const sec = (state.addedSections || []).length;
+        const del = (state.deleted || []).length;
+        const msg =
+          '✓ Saved to this browser: ' +
+          count + ' text/style edits' +
+          (nav ? ', ' + nav + ' nav links' : '') +
+          (sec ? ', ' + sec + ' sections' : '') +
+          (del ? ', ' + del + ' deletes' : '');
+        status(msg);
+        showBigBanner(
+          'Saved ✓  (' + count + ' edits)',
+          'Your changes are now live on the main page (this browser). Open / in a new tab to confirm.'
+        );
       } catch (e) {
         status('Save failed: ' + e.message, true);
+        showBigBanner('Save FAILED', e.message, true);
       }
+    }
+
+    // Big centered flash to make Save obviously work. Users kept asking
+    // "did it save?" because the subtle bottom-right status bar was too
+    // easy to miss.
+    function showBigBanner(title, sub, warn) {
+      let n = document.getElementById('cmsFlash');
+      if (!n) {
+        n = document.createElement('div');
+        n.id = 'cmsFlash';
+        n.style.cssText = [
+          'position:fixed',
+          'left:50%',
+          'top:72px',
+          'transform:translateX(-50%)',
+          'z-index:2147483647',
+          'padding:14px 20px',
+          'border-radius:12px',
+          'font:600 14px/1.35 system-ui,sans-serif',
+          'color:#0b1220',
+          'background:#7CFFB2',
+          'box-shadow:0 12px 40px rgba(0,0,0,.35)',
+          'max-width:520px',
+          'text-align:center',
+          'pointer-events:none',
+          'opacity:0',
+          'transition:opacity .18s ease'
+        ].join(';');
+        document.body.appendChild(n);
+      }
+      n.style.background = warn ? '#ff9797' : '#7CFFB2';
+      n.innerHTML =
+        '<div style="font-size:16px;margin-bottom:4px">' + title + '</div>' +
+        '<div style="font-weight:500;opacity:.85">' + (sub || '') + '</div>';
+      // Force reflow then fade in
+      // eslint-disable-next-line no-unused-expressions
+      n.offsetWidth;
+      n.style.opacity = '1';
+      clearTimeout(showBigBanner._t);
+      showBigBanner._t = setTimeout(() => { n.style.opacity = '0'; }, 2600);
     }
 
     function load() {
@@ -41,6 +96,10 @@ export default function CMSEditor() {
       return 'e' + Math.random().toString(36).slice(2, 9);
     }
 
+    // Selectors tuned to the JSX markup in components/Portfolio.jsx. Generic
+    // tag selectors (h1–h4, p, li) cover most headings + body copy inside
+    // skill-card / tl-card / cert automatically, so we only list specific
+    // classes for text nodes that aren't a standard tag.
     const EDITABLE_SELECTORS = [
       { sel: 'h1,h2,h3,h4', kind: 'text' },
       { sel: 'p', kind: 'text' },
@@ -50,12 +109,10 @@ export default function CMSEditor() {
       { sel: '.info-cell .v', kind: 'text' },
       { sel: '.info-cell .k', kind: 'text' },
       { sel: '.brand .sig', kind: 'text' },
-      {
-        sel: '.tl-title,.tl-co,.tl-when,.tl-meta .co,.tl-meta .date,.tl-meta .loc',
-        kind: 'text',
-      },
-      { sel: '.edu-title,.edu-sub,.edu-when', kind: 'text' },
-      { sel: '.skill-title,.pill', kind: 'text' },
+      // Timeline cards (.tl-item > .tl-card): meta spans + company tagline.
+      { sel: '.tl-meta .date', kind: 'text' },
+      { sel: '.tl-meta .loc', kind: 'text' },
+      { sel: '.tl-card .co', kind: 'text' },
       { sel: '.stat .num', kind: 'text' },
       { sel: '.stat .lab', kind: 'text' },
       { sel: '.cert .t', kind: 'text' },
@@ -66,8 +123,9 @@ export default function CMSEditor() {
       { sel: '.contact-tag', kind: 'text' },
       { sel: '.contact-links a', kind: 'link' },
       { sel: 'footer p, footer span', kind: 'text' },
-      { sel: '#navLinks a', kind: 'link' },
+      { sel: '#navLinks a, .nav-links a', kind: 'link' },
       { sel: '.btn', kind: 'link' },
+      // Container-level (width, padding, background, border).
       {
         sel: 'section, header.hero, .container, .hero-grid, .info-strip, footer',
         kind: 'container',
@@ -155,7 +213,16 @@ export default function CMSEditor() {
     }
 
     function keyFor(el) {
-      return el.getAttribute('data-edit-id') || pathOf(el);
+      // Persistence key MUST be stable across page reloads. The old
+      // implementation used the `data-edit-id` runtime uid as the key,
+      // but registerAll() re-generates that uid on every page load — so
+      // after saving, the next visit couldn't find the element and all
+      // edits silently vanished.
+      //
+      // pathOf() returns a CSS selector like "body>main.container>section.about>h2"
+      // that survives reloads as long as the DOM structure around the element
+      // doesn't change.
+      return pathOf(el);
     }
 
     function pathOf(el) {
@@ -186,13 +253,16 @@ export default function CMSEditor() {
 
     function findByKey(k) {
       if (!k) return null;
-      let el = document.querySelector('[data-edit-id="' + k + '"]');
-      if (el) return el;
+      // Keys are pathOf() selectors (stable across reloads) or "#id" shortcuts
+      // for elements with an id. Fall back to data-edit-id for any legacy
+      // state loaded from an older localStorage snapshot.
       try {
-        return document.querySelector(k);
+        const el = document.querySelector(k);
+        if (el) return el;
       } catch (e) {
-        return null;
+        // k wasn't valid CSS — fall through to legacy lookup
       }
+      return document.querySelector('[data-edit-id="' + CSS.escape(k) + '"]');
     }
 
     function spawnSection(s) {
@@ -213,10 +283,17 @@ export default function CMSEditor() {
     function toggleEdit(forceOn) {
       const on = forceOn != null ? !!forceOn : !document.body.classList.contains('cms-edit');
       document.body.classList.toggle('cms-edit', on);
-      $('#cmsToggleEdit').textContent = 'Edit: ' + (on ? 'ON' : 'OFF');
+      const btn = $('#cmsToggleEdit');
+      if (btn) {
+        btn.textContent = 'Edit: ' + (on ? 'ON' : 'OFF');
+        // Visual cue so the user can see the click registered.
+        btn.style.background = on ? '#7CFFB2' : '';
+        btn.style.color = on ? '#0b1220' : '';
+      }
       if (!on) {
         closeInspector();
       }
+      status(on ? 'Edit mode ON — click any text to edit' : 'Edit mode OFF');
     }
 
     function showToolbar() {
@@ -730,15 +807,19 @@ export default function CMSEditor() {
     }
 
     function wireToolbar() {
-      $('#cmsToggleEdit').addEventListener('click', () => toggleEdit());
-      $('#cmsSave').addEventListener('click', save);
-      $('#cmsReset').addEventListener('click', () => {
+      // NOTE: use `.onclick = fn` (not addEventListener) so that repeat
+      // mounts (e.g. React StrictMode runs this effect twice in dev)
+      // can't stack duplicate handlers. With addEventListener, every
+      // click of "Edit: OFF" would flip the mode twice and look stuck.
+      $('#cmsToggleEdit').onclick = () => toggleEdit();
+      $('#cmsSave').onclick = save;
+      $('#cmsReset').onclick = () => {
         if (!confirm('Discard all CMS edits?')) return;
         localStorage.removeItem(LS_KEY);
         location.reload();
-      });
+      };
 
-      $('#cmsAddSection').addEventListener('click', () => {
+      $('#cmsAddSection').onclick = () => {
         const title = prompt('Section title', 'New Section');
         if (!title) return;
         const id =
@@ -753,9 +834,9 @@ export default function CMSEditor() {
         registerAll();
         save();
         location.hash = '#' + id;
-      });
+      };
 
-      $('#cmsAddNav').addEventListener('click', () => {
+      $('#cmsAddNav').onclick = () => {
         const label = prompt('Nav link label', 'New link');
         if (!label) return;
         const href = prompt('URL or #section', '#about');
@@ -770,9 +851,9 @@ export default function CMSEditor() {
         $('#navLinks').appendChild(a);
         registerAll();
         save();
-      });
+      };
 
-      $('#cmsExport').addEventListener('click', exportHtml);
+      $('#cmsExport').onclick = exportHtml;
     }
 
     function exportHtml() {
@@ -802,58 +883,83 @@ export default function CMSEditor() {
     }
 
     function boot() {
-      // ---- Auth gate --------------------------------------------------
-      // Only mount the CMS if the `cms-ok` cookie is present. The cookie
-      // is set by /middleware.js after the visitor passes HTTP Basic Auth
-      // (credentials stored on Vercel as CMS_USER / CMS_PASS env vars).
-      // Random visitors never see the toolbar or the Ctrl+Shift+E shortcut.
+      // ---- Step 1: replay saved edits for EVERY visit -----------------
+      // Running registerAll() + applyAll() here (before the edit-mode
+      // gate) means the public `/` view on the editor's own browser
+      // shows the latest saved edits automatically. No ?edit=1 needed
+      // to *see* changes — only to *make* changes.
+      //
+      // Note: edits live in this browser's localStorage, so other
+      // visitors won't see them until you Export → deploy. That's the
+      // intended boundary: drafts stay local, Export ships to the world.
+      registerAll();
+      applyAll();
+
+      // ---- Step 2: edit-mode gate -------------------------------------
+      // The editor UI (toolbar, inspector, contentEditable) only mounts
+      // when the URL carries `?edit=1` and middleware has set the
+      // `cms-ok` cookie. Visiting `/` plain shows the normal site.
+      const sp = (typeof location !== 'undefined')
+        ? new URLSearchParams(location.search)
+        : new URLSearchParams('');
+      if (sp.get('edit') !== '1') return;
+
       const authed = (typeof document !== 'undefined') &&
         /(?:^|;\s*)cms-ok=1(?:;|$)/.test(document.cookie);
       if (!authed) return;
 
-      registerAll();
-      applyAll();
+      // ---- Step 3: mount editor UI ------------------------------------
       wireToolbar();
       wireInspector();
       showToolbar();
 
       document.addEventListener('click', onDocClick, true);
+      document.addEventListener('selectionchange', onSelectionChange);
+      document.addEventListener('mousedown', onDocMouseDown);
+      document.addEventListener('keydown', onDocKeyDown);
 
-      document.addEventListener('selectionchange', () => {
-        if (!document.body.classList.contains('cms-inspector-open')) return;
-        const r = currentSelectionRange();
-        if (r) _lastRange = r.cloneRange();
-        updateTargetIndicator();
-      });
-
-      document.addEventListener('mousedown', (e) => {
-        if (!current) return;
-        if (e.target.closest('.cms-inspector, .cms-toolbar')) return;
-        if (current.contains(e.target)) return;
-        _lastRange = null;
-        updateTargetIndicator();
-      });
-
-      document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
-          e.preventDefault();
-          toggleEdit();
-        }
-        if (e.key === 'Escape' && document.body.classList.contains('cms-inspector-open')) {
-          closeInspector();
-        }
-      });
-
-      const sp = new URLSearchParams(location.search);
-      if (sp.get('edit') === '1') toggleEdit(true);
+      // Enter edit mode by default when ?edit=1 — the whole point of
+      // opening that URL is to edit.
+      toggleEdit(true);
 
       window.addEventListener('beforeunload', save);
+    }
+
+    // Named handlers so cleanup can actually remove them. Anonymous
+    // arrow callbacks passed to addEventListener could never be removed
+    // and leaked across React StrictMode double-mounts.
+    function onSelectionChange() {
+      if (!document.body.classList.contains('cms-inspector-open')) return;
+      const r = currentSelectionRange();
+      if (r) _lastRange = r.cloneRange();
+      updateTargetIndicator();
+    }
+
+    function onDocMouseDown(e) {
+      if (!current) return;
+      if (e.target.closest('.cms-inspector, .cms-toolbar')) return;
+      if (current.contains(e.target)) return;
+      _lastRange = null;
+      updateTargetIndicator();
+    }
+
+    function onDocKeyDown(e) {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
+        e.preventDefault();
+        toggleEdit();
+      }
+      if (e.key === 'Escape' && document.body.classList.contains('cms-inspector-open')) {
+        closeInspector();
+      }
     }
 
     boot();
 
     return () => {
       document.removeEventListener('click', onDocClick, true);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onDocKeyDown);
       document.body.classList.remove('cms-edit', 'cms-ready', 'cms-inspector-open');
       window.removeEventListener('beforeunload', save);
     };
