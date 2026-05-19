@@ -139,6 +139,10 @@ export default function Portfolio() {
                 <span className="en">Contact</span>
                 <span className="th">ติดต่อ</span>
               </a>
+              <a href="/showcase" className="btn primary" style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '999px', textDecoration: 'none' }}>
+                <span className="en">Showcase ✦</span>
+                <span className="th">ผลงาน ✦</span>
+              </a>
             </div>
             <div className="lang-toggle" role="group" aria-label="Language toggle">
               <button data-lang="en" className="active">
@@ -195,6 +199,11 @@ export default function Portfolio() {
                   <span className="en">View experience</span>
                   <span className="th">ดูประสบการณ์</span>
                   <span className="arrow">→</span>
+                </a>
+                <a href="/showcase" className="btn ghost">
+                  <span className="en">See showcase</span>
+                  <span className="th">ดูผลงาน</span>
+                  <span className="arrow">✦</span>
                 </a>
                 <a href="#contact" className="btn ghost">
                   <span className="en">Get in touch</span>
