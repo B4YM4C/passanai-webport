@@ -278,8 +278,8 @@ export default function Showcase() {
               <span className="th">4 โปรเจกต์ · เว็บจริง · prototype กดได้</span>
             </span>
             <h1 className="sc-title">
-              <span className="en">Work <span className="hand frost">Showcase</span></span>
-              <span className="th">ผลงาน <span className="hand frost">ที่ภาคภูมิใจ</span></span>
+              <span className="en"><span className="hand frost">Work Showcase</span></span>
+              <span className="th"><span className="hand frost">ผลงานที่ภาคภูมิใจ</span></span>
             </h1>
             <p className="lead sc-lead">
               <span className="en">Selected projects shipped across personal, consulting, and enterprise contexts — each one clickable, not just a slide deck.</span>
